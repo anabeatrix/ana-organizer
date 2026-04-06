@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useState, useEffect, useCallback } from "react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
@@ -43,12 +44,13 @@ const fmtShort = v => {
 function useFirestore(docPath, fallback) {
   const [data, setData] = useState(fallback);
   const [ready, setReady] = useState(false);
+  const fallbackRef = useRef(fallback);
 
   useEffect(() => {
     const ref = doc(db, "ana", docPath);
     const unsub = onSnapshot(ref, snap => {
-      if (snap.exists()) setData(snap.data().value ?? fallback);
-      else setData(fallback);
+      if (snap.exists()) setData(snap.data().value ?? fallbackRef.current);
+      else setData(fallbackRef.current);
       setReady(true);
     });
     return unsub;
