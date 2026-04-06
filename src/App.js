@@ -1,12 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
 
-// ─── STORAGE ───────────────────────────────────────────────────────────────
-const load = (key, fallback) => {
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
+// ─── FIREBASE ──────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDKKMD2qgp_WXIoZoDL9jTqaJlZJxXbY4Y",
+  authDomain: "ana-organizer.firebaseapp.com",
+  projectId: "ana-organizer",
+  storageBucket: "ana-organizer.firebasestorage.app",
+  messagingSenderId: "21585629064",
+  appId: "1:21585629064:web:679b8a2f44e1b853f2343d"
 };
-const save = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
-const todayKey = () => new Date().toISOString().slice(0, 10);
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// ─── PASSWORD ──────────────────────────────────────────────────────────────
+const APP_PASSWORD = process.env.REACT_APP_PASSWORD;
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────────────
 const EXPENSE_CATS = ["Food", "Transport", "Housing", "Health", "Learning", "Leisure", "Other"];
@@ -20,7 +30,8 @@ const C = {
   gold: "#c8a84a",
 };
 
-// ─── HELPERS ───────────────────────────────────────────────────────────────
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const monthKey = () => new Date().toISOString().slice(0, 7);
 const fmt = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtShort = v => {
   if (v >= 1000000) return `R$${(v / 1000000).toFixed(1)}M`;
@@ -28,16 +39,28 @@ const fmtShort = v => {
   return fmt(v);
 };
 
-function useLocalState(key, fallback) {
-  const [val, setVal] = useState(() => load(key, fallback));
-  const set = useCallback((v) => {
-    setVal(prev => {
-      const next = typeof v === "function" ? v(prev) : v;
-      save(key, next);
-      return next;
+// ─── FIREBASE HOOK ─────────────────────────────────────────────────────────
+function useFirestore(docPath, fallback) {
+  const [data, setData] = useState(fallback);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const ref = doc(db, "ana", docPath);
+    const unsub = onSnapshot(ref, snap => {
+      if (snap.exists()) setData(snap.data().value ?? fallback);
+      else setData(fallback);
+      setReady(true);
     });
-  }, [key]);
-  return [val, set];
+    return unsub;
+  }, [docPath]);
+
+  const save = useCallback(async (val) => {
+    const next = typeof val === "function" ? val(data) : val;
+    setData(next);
+    await setDoc(doc(db, "ana", docPath), { value: next });
+  }, [docPath, data]);
+
+  return [data, save, ready];
 }
 
 // ─── COMPONENTS ────────────────────────────────────────────────────────────
@@ -78,7 +101,7 @@ function Label({ children }) {
   return <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10, fontWeight: 700 }}>{children}</div>;
 }
 
-// ─── STREAK LOGIC ──────────────────────────────────────────────────────────
+// ─── STREAK ────────────────────────────────────────────────────────────────
 function computeStreak(history, key) {
   let streak = 0;
   const today = todayKey();
@@ -103,18 +126,14 @@ function StreakFlame({ n, color }) {
   );
 }
 
-// ─── TODAY TAB ─────────────────────────────────────────────────────────────
+// ─── TODAY ─────────────────────────────────────────────────────────────────
 function Today() {
   const today = todayKey();
-  const [history, setHistory] = useLocalState("ana_checkin_history", {});
-  const [priority, setPriority] = useLocalState("ana_priority_" + today, "");
+  const [history, setHistory, histReady] = useFirestore("checkin_history", {});
+  const [priority, setPriority] = useFirestore("priority_" + today, "");
 
   const todayData = history[today] || { english: false, gym: false };
-
-  const toggle = (key) => {
-    const updated = { ...history, [today]: { ...todayData, [key]: !todayData[key] } };
-    setHistory(updated);
-  };
+  const toggle = (key) => setHistory({ ...history, [today]: { ...todayData, [key]: !todayData[key] } });
 
   const engStreak = computeStreak(history, "english");
   const gymStreak = computeStreak(history, "gym");
@@ -131,12 +150,14 @@ function Today() {
     return "Good evening, Ana.";
   };
 
-  const allDone = todayData.english && todayData.gym && priority.trim();
+  const allDone = todayData.english && todayData.gym && priority?.trim();
 
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - 6 + i);
     return { key: d.toISOString().slice(0, 10), label: d.toLocaleDateString("en", { weekday: "short" }).slice(0, 1) };
   });
+
+  if (!histReady) return <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading...</div>;
 
   return (
     <div>
@@ -170,7 +191,7 @@ function Today() {
       <Card style={{ marginBottom: 20 }}>
         <Label>Today's one priority</Label>
         <Input
-          value={priority}
+          value={priority || ""}
           onChange={e => setPriority(e.target.value)}
           placeholder="What's the one thing that matters today?"
           style={{ width: "100%", boxSizing: "border-box" }}
@@ -200,14 +221,6 @@ function Today() {
             );
           })}
         </div>
-        <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
-          <div style={{ fontSize: 11, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.green + "33", border: `1.5px solid ${C.green}` }} /> Both done
-          </div>
-          <div style={{ fontSize: 11, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.accent + "33", border: `1.5px solid ${C.accent}` }} /> Partial
-          </div>
-        </div>
       </Card>
 
       {allDone && (
@@ -220,12 +233,12 @@ function Today() {
   );
 }
 
-// ─── FINANCE TAB ───────────────────────────────────────────────────────────
+// ─── FINANCE ───────────────────────────────────────────────────────────────
 function Finance() {
-  const monthKey = new Date().toISOString().slice(0, 7);
-  const [expenses, setExpenses] = useLocalState("ana_expenses_" + monthKey, []);
-  const [budget, setBudget] = useLocalState("ana_budget", BUDGET_DEFAULTS);
-  const [investments, setInvestments] = useLocalState("ana_investments", [
+  const mk = monthKey();
+  const [expenses, setExpenses, expReady] = useFirestore("expenses_" + mk, []);
+  const [budget, setBudget] = useFirestore("budget", BUDGET_DEFAULTS);
+  const [investments, setInvestments] = useFirestore("investments", [
     { id: 1, name: "Tesouro Selic", cat: "Renda Fixa", value: 5000 },
     { id: 2, name: "BOVA11", cat: "Stocks", value: 3200 },
   ]);
@@ -239,13 +252,13 @@ function Finance() {
 
   const addExpense = () => {
     if (!desc.trim() || !amount) return;
-    setExpenses(e => [...e, { id: Date.now(), desc, amount: parseFloat(amount), cat, date: todayKey() }]);
+    setExpenses([...expenses, { id: Date.now(), desc, amount: parseFloat(amount), cat, date: todayKey() }]);
     setDesc(""); setAmount("");
   };
 
   const addInv = () => {
     if (!invName.trim() || !invVal) return;
-    setInvestments(i => [...i, { id: Date.now(), name: invName, cat: invCat, value: parseFloat(invVal) }]);
+    setInvestments([...investments, { id: Date.now(), name: invName, cat: invCat, value: parseFloat(invVal) }]);
     setInvName(""); setInvVal("");
   };
 
@@ -254,6 +267,8 @@ function Finance() {
   const totalBudget = Object.values(budget).reduce((a, v) => a + v, 0);
   const netWorth = investments.reduce((a, i) => a + i.value, 0);
   const invByCat = investments.reduce((acc, i) => { acc[i.cat] = (acc[i.cat] || 0) + i.value; return acc; }, {});
+
+  if (!expReady) return <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Loading...</div>;
 
   return (
     <div>
@@ -329,7 +344,7 @@ function Finance() {
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{e.cat} · {e.date}</div>
               </div>
               <span style={{ color: C.red, fontWeight: 700, fontSize: 14 }}>-{fmt(e.amount)}</span>
-              <button onClick={() => setExpenses(ex => ex.filter(x => x.id !== e.id))}
+              <button onClick={() => setExpenses(expenses.filter(x => x.id !== e.id))}
                 style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
             </div>
           ))}
@@ -344,7 +359,7 @@ function Finance() {
             <div key={c} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
               <span style={{ flex: 1, fontSize: 13, color: C.text }}>{c}</span>
               <Input type="number" value={budget[c] || 0}
-                onChange={e => setBudget(b => ({ ...b, [c]: parseFloat(e.target.value) || 0 }))}
+                onChange={e => setBudget({ ...budget, [c]: parseFloat(e.target.value) || 0 })}
                 style={{ width: 100 }} />
             </div>
           ))}
@@ -373,10 +388,10 @@ function Finance() {
               }}>+ Add position</button>
             </div>
           </Card>
-          {Object.entries(invByCat).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
-            <div key={cat} style={{ marginBottom: 12 }}>
+          {Object.entries(invByCat).sort((a, b) => b[1] - a[1]).map(([c, val]) => (
+            <div key={c} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
-                <span style={{ color: C.text }}>{cat}</span>
+                <span style={{ color: C.text }}>{c}</span>
                 <span style={{ color: C.gold }}>{fmt(val)} · {((val / netWorth) * 100).toFixed(1)}%</span>
               </div>
               <div style={{ background: C.border, borderRadius: 999, height: 5, overflow: "hidden" }}>
@@ -392,13 +407,56 @@ function Finance() {
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{inv.cat}</div>
                 </div>
                 <span style={{ color: C.gold, fontWeight: 700, fontSize: 14 }}>{fmt(inv.value)}</span>
-                <button onClick={() => setInvestments(i => i.filter(x => x.id !== inv.id))}
+                <button onClick={() => setInvestments(investments.filter(x => x.id !== inv.id))}
                   style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
               </div>
             ))}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── LOGIN ─────────────────────────────────────────────────────────────────
+function Login({ onUnlock }) {
+  const [pwd, setPwd] = useState("");
+  const [error, setError] = useState(false);
+
+  const attempt = () => {
+    if (pwd === APP_PASSWORD) { onUnlock(); }
+    else { setError(true); setPwd(""); setTimeout(() => setError(false), 1500); }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ fontSize: 10, letterSpacing: 3, color: C.muted, textTransform: "uppercase", marginBottom: 12 }}>Ana's space</div>
+      <div style={{ fontSize: 32, fontFamily: "Georgia, serif", color: C.text, marginBottom: 48 }}>Personal OS</div>
+      <div style={{ width: "100%", maxWidth: 320 }}>
+        <input
+          type="password"
+          value={pwd}
+          onChange={e => setPwd(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && attempt()}
+          placeholder="Password"
+          autoFocus
+          style={{
+            width: "100%", boxSizing: "border-box",
+            background: error ? "#d46a6a18" : "#1e1a14",
+            border: `1px solid ${error ? C.red : C.border}`,
+            color: C.text, borderRadius: 10, padding: "12px 16px",
+            fontSize: 16, outline: "none", fontFamily: "inherit",
+            textAlign: "center", letterSpacing: 4, marginBottom: 12,
+            transition: "border 0.2s"
+          }}
+        />
+        <button onClick={attempt} style={{
+          width: "100%", background: C.accent, border: "none", color: "#fff",
+          borderRadius: 10, padding: "12px 0", fontSize: 15,
+          cursor: "pointer", fontFamily: "inherit", fontWeight: 600
+        }}>Enter</button>
+        {error && <div style={{ color: C.red, textAlign: "center", marginTop: 12, fontSize: 13 }}>Wrong password.</div>}
+      </div>
     </div>
   );
 }
@@ -410,7 +468,18 @@ const TABS = [
 ];
 
 export default function App() {
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("ana_unlocked") === "1");
   const [tab, setTab] = useState("today");
+
+  const unlock = () => { sessionStorage.setItem("ana_unlocked", "1"); setUnlocked(true); };
+
+  if (!unlocked) return (
+    <>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+      <style>{`* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #0e0c0a; }`}</style>
+      <Login onUnlock={unlock} />
+    </>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "'DM Sans', sans-serif" }}>
