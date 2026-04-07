@@ -48,6 +48,8 @@ const CATEGORIES = [
   { id: "viagem", label: "Viagem", color: C.orange, type: "variavel", subs: ["Passagem", "Hospedagem", "Passeio", "Alimentação", "Outros"] },
 ];
 
+const INCOME_CATS = ["Salário", "Vale", "PLR", "Freelance", "Resgates", "Outros"];
+
 const toKey = s => s.replace(/[^a-zA-Z0-9]/g, "_");
 
 const buildDefaultTetos = () => {
