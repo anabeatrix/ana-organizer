@@ -22,6 +22,8 @@ jobs:
         run: npm run build
         env:
           REACT_APP_PASSWORD: ${{ secrets.REACT_APP_PASSWORD }}
+          REACT_APP_ALLOWED_EMAIL: ${{ secrets.REACT_APP_ALLOWED_EMAIL }}
+
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4

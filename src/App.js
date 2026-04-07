@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "firebase/firestore";
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDKKMD2qgp_WXIoZoDL9jTqaJlZJxXbY4Y",
@@ -13,7 +14,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const APP_PASSWORD = process.env.REACT_APP_PASSWORD;
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+const ALLOWED_EMAIL = process.env.REACT_APP_ALLOWED_EMAIL;
 
 const C = {
   bg: "#0e0c0a", surface: "#161310", border: "#2a2318",
@@ -457,9 +461,7 @@ function History() {
     const loadHistory = async () => {
       const results = [];
       for (let i = 5; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(1);
-        d.setMonth(d.getMonth() - i);
+        const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
         const mk = d.toISOString().slice(0, 7);
         try {
           const expSnap = await getDoc(doc(db, "ana", "expenses_" + mk));
@@ -480,17 +482,15 @@ function History() {
   }, []);
 
   if (loading) return <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Carregando histórico...</div>;
-
   const maxTotal = Math.max(...monthsData.map(m => m.total), 1);
   const hasData = monthsData.some(m => m.total > 0);
 
   return (
     <div>
-      {/* Bar chart — total por mês */}
       <Label>Gasto total por mês</Label>
       <Card style={{ marginBottom: 20 }}>
         {!hasData ? (
-          <div style={{ color: C.muted, textAlign: "center", fontSize: 13, padding: 16 }}>Nenhum dado ainda. Comece a registrar gastos.</div>
+          <div style={{ color: C.muted, textAlign: "center", fontSize: 13, padding: 16 }}>Nenhum dado ainda.</div>
         ) : (
           <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 100, marginBottom: 8 }}>
             {monthsData.map((m, i) => {
@@ -498,14 +498,8 @@ function History() {
               const isLast = i === monthsData.length - 1;
               return (
                 <div key={m.mk} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                  <div style={{ fontSize: 9, color: isLast ? C.accent : C.muted, fontWeight: isLast ? 700 : 400 }}>
-                    {m.total > 0 ? fmtShort(m.total) : ""}
-                  </div>
-                  <div style={{
-                    width: "100%", height: h, borderRadius: "4px 4px 0 0",
-                    background: isLast ? C.accent : C.muted + "66",
-                    transition: "height 0.4s"
-                  }} />
+                  <div style={{ fontSize: 9, color: isLast ? C.accent : C.muted }}>{m.total > 0 ? fmtShort(m.total) : ""}</div>
+                  <div style={{ width: "100%", height: h, borderRadius: "4px 4px 0 0", background: isLast ? C.accent : C.muted + "66" }} />
                 </div>
               );
             })}
@@ -513,25 +507,19 @@ function History() {
         )}
         <div style={{ display: "flex", gap: 6 }}>
           {monthsData.map((m, i) => (
-            <div key={m.mk} style={{ flex: 1, textAlign: "center", fontSize: 9, color: i === monthsData.length - 1 ? C.accent : C.muted }}>
-              {m.label}
-            </div>
+            <div key={m.mk} style={{ flex: 1, textAlign: "center", fontSize: 9, color: i === monthsData.length - 1 ? C.accent : C.muted }}>{m.label}</div>
           ))}
         </div>
       </Card>
 
-      {/* Filtro por categoria */}
       <Label>Por categoria</Label>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
         <Pill active={!focusCat} onClick={() => setFocusCat(null)}>Todas</Pill>
         {CATEGORIES.map(c => (
-          <Pill key={c.id} active={focusCat === c.id} onClick={() => setFocusCat(focusCat === c.id ? null : c.id)} color={c.color}>
-            {c.label}
-          </Pill>
+          <Pill key={c.id} active={focusCat === c.id} onClick={() => setFocusCat(focusCat === c.id ? null : c.id)} color={c.color}>{c.label}</Pill>
         ))}
       </div>
 
-      {/* Mini barras por categoria por mês */}
       {(focusCat ? CATEGORIES.filter(c => c.id === focusCat) : CATEGORIES).map(cat => (
         <div key={cat.id} style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -549,26 +537,20 @@ function History() {
               return (
                 <div key={m.mk} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                   {spent > 0 && <div style={{ fontSize: 8, color: over ? C.red : C.muted }}>{fmtShort(spent)}</div>}
-                  <div style={{
-                    width: "100%", height: h, borderRadius: "3px 3px 0 0",
-                    background: over ? C.red : isLast ? cat.color : cat.color + "55"
-                  }} />
+                  <div style={{ width: "100%", height: h, borderRadius: "3px 3px 0 0", background: over ? C.red : isLast ? cat.color : cat.color + "55" }} />
                 </div>
               );
             })}
           </div>
           <div style={{ display: "flex", gap: 4 }}>
             {monthsData.map((m, i) => (
-              <div key={m.mk} style={{ flex: 1, textAlign: "center", fontSize: 8, color: i === monthsData.length - 1 ? C.accent : C.muted }}>
-                {m.label}
-              </div>
+              <div key={m.mk} style={{ flex: 1, textAlign: "center", fontSize: 8, color: i === monthsData.length - 1 ? C.accent : C.muted }}>{m.label}</div>
             ))}
           </div>
         </div>
       ))}
 
-      {/* Tabela resumo */}
-      <Label style={{ marginTop: 8 }}>Tabela resumo</Label>
+      <Label>Tabela resumo</Label>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
@@ -615,24 +597,26 @@ function History() {
 }
 
 // ─── LOGIN ─────────────────────────────────────────────────────────────────
-function Login({ onUnlock }) {
-  const [pwd, setPwd] = useState("");
-  const [error, setError] = useState(false);
-  const attempt = () => {
-    if (pwd === APP_PASSWORD) { onUnlock(); }
-    else { setError(true); setPwd(""); setTimeout(() => setError(false), 1500); }
-  };
+function Login({ onLogin, loading }) {
   return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ fontSize: 10, letterSpacing: 3, color: C.muted, textTransform: "uppercase", marginBottom: 12 }}>Ana's space</div>
-      <div style={{ fontSize: 32, fontFamily: "Georgia, serif", color: C.text, marginBottom: 48 }}>Personal OS</div>
-      <div style={{ width: "100%", maxWidth: 320 }}>
-        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && attempt()} placeholder="Password" autoFocus
-          style={{ width: "100%", boxSizing: "border-box", background: error ? "#d46a6a18" : "#1e1a14", border: `1px solid ${error ? C.red : C.border}`, color: C.text, borderRadius: 10, padding: "12px 16px", fontSize: 16, outline: "none", fontFamily: "inherit", textAlign: "center", letterSpacing: 4, marginBottom: 12, transition: "border 0.2s" }} />
-        <button onClick={attempt} style={{ width: "100%", background: C.accent, border: "none", color: "#fff", borderRadius: 10, padding: "12px 0", fontSize: 15, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Enter</button>
-        {error && <div style={{ color: C.red, textAlign: "center", marginTop: 12, fontSize: 13 }}>Senha incorreta.</div>}
-      </div>
+      <div style={{ fontSize: 32, fontFamily: "Georgia, serif", color: C.text, marginBottom: 16 }}>Personal OS</div>
+      <div style={{ fontSize: 13, color: C.muted, marginBottom: 48 }}>Acesso restrito</div>
+      <button onClick={onLogin} disabled={loading} style={{
+        background: loading ? C.surface : C.accent, border: "none", color: loading ? C.muted : "#fff",
+        borderRadius: 12, padding: "14px 32px", fontSize: 15,
+        cursor: loading ? "default" : "pointer", fontFamily: "inherit", fontWeight: 600,
+        display: "flex", alignItems: "center", gap: 10, transition: "all 0.2s"
+      }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        {loading ? "Entrando..." : "Entrar com Google"}
+      </button>
     </div>
   );
 }
@@ -645,15 +629,53 @@ const TABS = [
 ];
 
 export default function App() {
-  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem("ana_unlocked") === "1");
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [tab, setTab] = useState("today");
-  const unlock = () => { sessionStorage.setItem("ana_unlocked", "1"); setUnlocked(true); };
 
-  if (!unlocked) return (
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        if (ALLOWED_EMAIL && u.email !== ALLOWED_EMAIL) {
+          signOut(auth);
+          setAccessDenied(true);
+          setUser(null);
+        } else {
+          setUser(u);
+          setAccessDenied(false);
+        }
+      } else {
+        setUser(null);
+      }
+      setAuthLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const handleLogin = async () => {
+    setLoginLoading(true);
+    try { await signInWithPopup(auth, provider); }
+    catch { setLoginLoading(false); }
+  };
+
+  if (authLoading) return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ color: C.muted, fontSize: 13 }}>Carregando...</div>
+    </div>
+  );
+
+  if (!user) return (
     <>
       <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`* { box-sizing: border-box; margin: 0; padding: 0; } body { background: #0e0c0a; }`}</style>
-      <Login onUnlock={unlock} />
+      {accessDenied && (
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: C.red + "22", border: `1px solid ${C.red}44`, borderRadius: 10, padding: "10px 20px", color: C.red, fontSize: 13, zIndex: 999 }}>
+          Acesso não autorizado.
+        </div>
+      )}
+      <Login onLogin={handleLogin} loading={loginLoading} />
     </>
   );
 
@@ -662,9 +684,14 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`* { box-sizing: border-box; margin: 0; padding: 0; } input::placeholder { color: #4a3a28; } select option { background: #1e1a14; } body { background: #0e0c0a; }`}</style>
       <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 80 }}>
-        <div style={{ padding: "32px 20px 20px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 10, letterSpacing: 3, color: C.muted, textTransform: "uppercase", marginBottom: 6 }}>Ana's space</div>
-          <div style={{ fontSize: 26, fontFamily: "'DM Serif Display', Georgia, serif", color: C.text }}>Personal OS</div>
+        <div style={{ padding: "32px 20px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: 3, color: C.muted, textTransform: "uppercase", marginBottom: 6 }}>Ana's space</div>
+            <div style={{ fontSize: 26, fontFamily: "'DM Serif Display', Georgia, serif", color: C.text }}>Personal OS</div>
+          </div>
+          <button onClick={() => signOut(auth)} style={{ background: "none", border: "none", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: "4px 0" }}>
+            Sair
+          </button>
         </div>
         <div style={{ padding: "24px 20px" }}>
           {tab === "today" && <Today />}
