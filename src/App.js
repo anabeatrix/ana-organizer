@@ -40,10 +40,10 @@ const monthLabel = mk => {
 };
 
 const CATEGORIES = [
-  { id: "moradia", label: "Moradia", color: C.blue, type: "fixa", subs: ["Aluguel", "Luz", "Água", "Condomínio", "Outros"] },
+  { id: "moradia", label: "Moradia", color: C.blue, type: "fixa", subs: ["Aluguel", "Luz", "Água", "Outros"] },
   { id: "pessoal", label: "Pessoal Fixo", color: C.gold, type: "fixa", subs: ["Celular", "Internet", "Academia", "Pilates", "Outros"] },
   { id: "educacao", label: "Educação", color: C.accent, type: "fixa", subs: ["Faculdade", "Escola Irmã", "Inglês", "Italiano", "Cursos/Livros", "Outros"] },
-  { id: "outras_fixas", label: "Outras Fixas", color: "#a07ab8", type: "fixa", subs: ["Assinaturas", "Donativos", "Terapia", "Terceiros/Empréstimo", "Reforma/Casa", "Outros"] },
+  { id: "outras_fixas", label: "Outras Fixas", color: "#a07ab8", type: "fixa", subs: ["Assinaturas", "Donativos", "Terapia", "Terceiros/Empréstimo", "Outros"] },
   { id: "variaveis", label: "Variáveis", color: C.green, type: "variavel", subs: ["Dia a dia", "Mercado", "Feira", "Padaria/Lanche", "Combustível/Uber", "Farmácia", "Consultas", "Beleza", "Roupas/Compras", "Lazer/Passeio", "Pets", "Papelaria", "Presentes", "Extra", "Outros"] },
   { id: "viagem", label: "Viagem", color: C.orange, type: "variavel", subs: ["Passagem", "Hospedagem", "Passeio", "Alimentação", "Outros"] },
 ];
