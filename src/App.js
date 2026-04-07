@@ -280,6 +280,7 @@ function Today() {
 function Finance() {
   const mk = monthKey();
   const [expenses, setExpenses, expReady] = useFirestore("expenses_" + mk, []);
+  const [incomes, setIncomes] = useFirestore("incomes_" + mk, []);
   const [tetos, setTetos] = useFirestore("tetos_" + mk, DEFAULT_TETOS);
   const [investments, setInvestments] = useFirestore("investments", []);
   const [view, setView] = useState("overview");
@@ -294,11 +295,22 @@ function Finance() {
   const [invCat, setInvCat] = useState("Renda Fixa");
   const INV_CATS = ["Stocks", "FII", "Renda Fixa", "Crypto", "Internacional", "Caixa"];
 
+  const [incomeDesc, setIncomeDesc] = useState("");
+  const [incomeAmount, setIncomeAmount] = useState("");
+  const [incomeCat, setIncomeCat] = useState("Salário");
+  const [showIncome, setShowIncome] = useState(false);
+
   const addExpense = () => {
     if (!desc.trim() || !amount) return;
     const catObj = CATEGORIES.find(c => c.id === cat);
     setExpenses([...expenses, { id: Date.now(), desc, amount: parseFloat(amount), cat, sub, date: todayKey(), label: catObj?.label || cat }]);
     setDesc(""); setAmount(""); setShowLog(false);
+  };
+
+  const addIncome = () => {
+    if (!incomeDesc.trim() || !incomeAmount) return;
+    setIncomes([...incomes, { id: Date.now(), desc: incomeDesc, amount: parseFloat(incomeAmount), cat: incomeCat, date: todayKey() }]);
+    setIncomeDesc(""); setIncomeAmount(""); setShowIncome(false);
   };
 
   const addInv = () => {
@@ -309,6 +321,8 @@ function Finance() {
 
   const spentByCat = expenses.reduce((acc, e) => { acc[e.cat] = (acc[e.cat] || 0) + e.amount; return acc; }, {});
   const totalSpent = Object.values(spentByCat).reduce((a, v) => a + v, 0);
+  const totalIncome = incomes.reduce((a, i) => a + i.amount, 0);
+  const saldo = totalIncome - totalSpent;
   const totalTeto = totalTetos(tetos);
   const netWorth = investments.reduce((a, i) => a + i.value, 0);
   const overBudget = CATEGORIES.filter(c => spentByCat[c.id] > catTotal(tetos, c.id) && catTotal(tetos, c.id) > 0);
@@ -319,27 +333,46 @@ function Finance() {
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
         <Card>
-          <Label>{new Date().toLocaleDateString("pt-BR", { month: "long" })}</Label>
+          <Label>Receitas</Label>
+          <div style={{ fontSize: 20, fontWeight: 800, color: C.green, fontFamily: "Georgia, serif" }}>{fmtShort(totalIncome)}</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{incomes.length} lançamento{incomes.length !== 1 ? "s" : ""}</div>
+        </Card>
+        <Card>
+          <Label>Despesas</Label>
           <div style={{ fontSize: 20, fontWeight: 800, color: totalSpent > totalTeto ? C.red : C.text, fontFamily: "Georgia, serif" }}>{fmtShort(totalSpent)}</div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>de {fmtShort(totalTeto)}</div>
-          <div style={{ background: C.border, borderRadius: 999, height: 4, marginTop: 8, overflow: "hidden" }}>
+          <div style={{ background: C.border, borderRadius: 999, height: 4, marginTop: 6, overflow: "hidden" }}>
             <div style={{ width: `${Math.min(100, (totalSpent / totalTeto) * 100)}%`, height: "100%", background: totalSpent > totalTeto ? C.red : C.accent, transition: "width 0.4s" }} />
           </div>
+        </Card>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <Card>
+          <Label>Saldo</Label>
+          <div style={{ fontSize: 20, fontWeight: 800, color: saldo >= 0 ? C.green : C.red, fontFamily: "Georgia, serif" }}>{fmtShort(Math.abs(saldo))}</div>
+          <div style={{ fontSize: 11, color: saldo >= 0 ? C.green : C.red, marginTop: 2 }}>{saldo >= 0 ? "sobra" : "déficit"}</div>
         </Card>
         <Card>
           <Label>Patrimônio</Label>
           <div style={{ fontSize: 20, fontWeight: 800, color: C.gold, fontFamily: "Georgia, serif" }}>{fmtShort(netWorth)}</div>
-          {overBudget.length > 0 && <div style={{ fontSize: 11, color: C.red, marginTop: 6 }}>⚠ {overBudget.length} estourada{overBudget.length > 1 ? "s" : ""}</div>}
+          {overBudget.length > 0 && <div style={{ fontSize: 11, color: C.red, marginTop: 4 }}>⚠ {overBudget.length} estourada{overBudget.length > 1 ? "s" : ""}</div>}
         </Card>
       </div>
 
-      <button onClick={() => setShowLog(!showLog)} style={{
-        width: "100%", background: showLog ? C.surface : C.accent, border: `1px solid ${showLog ? C.border : C.accent}`,
-        color: showLog ? C.muted : "#fff", borderRadius: 12, padding: "12px 0",
-        fontSize: 14, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, marginBottom: 16, transition: "all 0.2s"
-      }}>{showLog ? "Cancelar" : "+ Registrar gasto"}</button>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: showLog || showIncome ? 0 : 16 }}>
+        <button onClick={() => { setShowLog(!showLog); setShowIncome(false); }} style={{
+          background: showLog ? C.surface : C.accent, border: `1px solid ${showLog ? C.border : C.accent}`,
+          color: showLog ? C.muted : "#fff", borderRadius: 12, padding: "12px 0",
+          fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, transition: "all 0.2s"
+        }}>{showLog ? "Cancelar" : "− Gasto"}</button>
+        <button onClick={() => { setShowIncome(!showIncome); setShowLog(false); }} style={{
+          background: showIncome ? C.surface : C.green, border: `1px solid ${showIncome ? C.border : C.green}`,
+          color: showIncome ? C.muted : "#fff", borderRadius: 12, padding: "12px 0",
+          fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, transition: "all 0.2s"
+        }}>{showIncome ? "Cancelar" : "+ Receita"}</button>
+      </div>
 
       {showLog && (
         <Card style={{ marginBottom: 16 }}>
@@ -366,8 +399,28 @@ function Finance() {
         </Card>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {["overview", "gastos", "tetos", "investimentos"].map(v => (
+      {showIncome && (
+        <Card style={{ marginBottom: 16, marginTop: 16, borderColor: C.green + "44" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Input value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)} type="number" placeholder="R$ 0,00"
+                style={{ width: 110, fontSize: 18, fontWeight: 700 }} autoFocus />
+              <Input value={incomeDesc} onChange={e => setIncomeDesc(e.target.value)} placeholder="Descrição"
+                onKeyDown={e => e.key === "Enter" && addIncome()} style={{ flex: 1 }} />
+            </div>
+            <Select value={incomeCat} onChange={e => setIncomeCat(e.target.value)} style={{ width: "100%" }}>
+              {INCOME_CATS.map(c => <option key={c}>{c}</option>)}
+            </Select>
+            <button onClick={addIncome} style={{
+              background: C.green, border: "none", color: "#fff", borderRadius: 8,
+              padding: "11px 0", fontSize: 14, cursor: "pointer", fontFamily: "inherit", fontWeight: 700
+            }}>Salvar receita</button>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", marginTop: 16 }}>
+        {["overview", "gastos", "receitas", "tetos", "investimentos"].map(v => (
           <Pill key={v} active={view === v} onClick={() => { setView(v); setFilterCat(null); }}>
             {v.charAt(0).toUpperCase() + v.slice(1)}
           </Pill>
@@ -410,6 +463,24 @@ function Finance() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {view === "receitas" && (
+        <div>
+          {incomes.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 32, fontSize: 13 }}>Nenhuma receita registrada ainda.</div>}
+          {incomes.slice().reverse().map(inc => (
+            <div key={inc.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.green, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, color: C.text }}>{inc.desc}</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{inc.cat} · {inc.date}</div>
+              </div>
+              <span style={{ color: C.green, fontWeight: 700, fontSize: 14, whiteSpace: "nowrap" }}>+{fmt(inc.amount)}</span>
+              <button onClick={() => setIncomes(incomes.filter(x => x.id !== inc.id))}
+                style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
+            </div>
+          ))}
         </div>
       )}
 
