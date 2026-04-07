@@ -48,7 +48,38 @@ const CATEGORIES = [
   { id: "viagem", label: "Viagem", color: C.orange, type: "variavel", subs: ["Passagem", "Hospedagem", "Passeio", "Alimentação", "Outros"] },
 ];
 
-const DEFAULT_TETOS = { moradia: 2700, pessoal: 123, educacao: 1870, outras_fixas: 570, variaveis: 4330, viagem: 0 };
+const toKey = s => s.replace(/[^a-zA-Z0-9]/g, "_");
+
+const buildDefaultTetos = () => {
+  const result = {};
+  const defaults = {
+    moradia: { Aluguel: 2700, Luz: 0, gua: 0, Outros: 0 },
+    pessoal: { Celular: 38, Internet: 85, Academia: 0, Pilates: 0, Outros: 0 },
+    educacao: { Faculdade: 500, Outros: 70 },
+    outras_fixas: { Assinaturas: 170, Donativos: 200, Terapia: 0, Outros: 0 },
+    variaveis: { Mercado: 680, Extra: 600, Outros: 0 },
+    viagem: {},
+  };
+  const CATS_STATIC = [
+    { id: "moradia", subs: ["Aluguel", "Luz", "Água", "Outros"] },
+    { id: "pessoal", subs: ["Celular", "Internet", "Academia", "Pilates", "Outros"] },
+    { id: "educacao", subs: ["Faculdade", "Escola Irmã", "Inglês", "Italiano", "Cursos/Livros", "Outros"] },
+    { id: "outras_fixas", subs: ["Assinaturas", "Donativos", "Terapia", "Terceiros/Empréstimo", "Outros"] },
+    { id: "variaveis", subs: ["Dia a dia", "Mercado", "Feira", "Padaria/Lanche", "Combustível/Uber", "Farmácia", "Consultas", "Beleza", "Roupas/Compras", "Lazer/Passeio", "Pets", "Papelaria", "Presentes", "Extra", "Outros"] },
+    { id: "viagem", subs: ["Passagem", "Hospedagem", "Passeio", "Alimentação", "Outros"] },
+  ];
+  CATS_STATIC.forEach(c => {
+    result[c.id] = {};
+    c.subs.forEach(s => { result[c.id][toKey(s)] = 0; });
+    if (defaults[c.id]) Object.assign(result[c.id], defaults[c.id]);
+  });
+  return result;
+};
+
+const DEFAULT_TETOS = buildDefaultTetos();
+
+const catTotal = (tetos, catId) => Object.values(tetos[catId] || {}).reduce((a, v) => a + (v || 0), 0);
+const totalTetos = (tetos) => CATEGORIES.reduce((a, c) => a + catTotal(tetos, c.id), 0);
 
 function useFirestore(docPath, fallback) {
   const [data, setData] = useState(fallback);
@@ -278,9 +309,9 @@ function Finance() {
 
   const spentByCat = expenses.reduce((acc, e) => { acc[e.cat] = (acc[e.cat] || 0) + e.amount; return acc; }, {});
   const totalSpent = Object.values(spentByCat).reduce((a, v) => a + v, 0);
-  const totalTeto = Object.values(tetos).reduce((a, v) => a + v, 0);
+  const totalTeto = totalTetos(tetos);
   const netWorth = investments.reduce((a, i) => a + i.value, 0);
-  const overBudget = CATEGORIES.filter(c => spentByCat[c.id] > tetos[c.id] && tetos[c.id] > 0);
+  const overBudget = CATEGORIES.filter(c => spentByCat[c.id] > catTotal(tetos, c.id) && catTotal(tetos, c.id) > 0);
   const filteredExpenses = filterCat ? expenses.filter(e => e.cat === filterCat) : expenses;
   const currentCat = CATEGORIES.find(c => c.id === cat);
 
@@ -347,7 +378,7 @@ function Finance() {
         <div>
           <Label>Teto vs realizado</Label>
           {CATEGORIES.map(c => (
-            <BudgetBar key={c.id} label={c.label} spent={spentByCat[c.id] || 0} teto={tetos[c.id] || 0}
+            <BudgetBar key={c.id} label={c.label} spent={spentByCat[c.id] || 0} teto={catTotal(tetos, c.id)}
               color={c.color} onPress={() => { setFilterCat(c.id); setView("gastos"); }} />
           ))}
           <div style={{ fontSize: 11, color: C.muted, marginTop: 12, textAlign: "center" }}>Toque numa categoria para ver os gastos</div>
@@ -384,18 +415,36 @@ function Finance() {
 
       {view === "tetos" && (
         <div>
-          <Label>Teto mensal por categoria</Label>
-          {CATEGORIES.map(c => (
-            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 13, color: C.text }}>{c.label}</span>
-              <Input type="number" value={tetos[c.id] || 0}
-                onChange={e => setTetos({ ...tetos, [c.id]: parseFloat(e.target.value) || 0 })}
-                style={{ width: 110, textAlign: "right" }} />
-            </div>
-          ))}
+          {CATEGORIES.map(c => {
+            const catTeto = catTotal(tetos, c.id);
+            const catSubs = tetos[c.id] || {};
+            return (
+              <div key={c.id} style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.text }}>{c.label}</span>
+                  <span style={{ fontSize: 12, color: c.color, fontWeight: 700 }}>{fmt(catTeto)}</span>
+                </div>
+                {c.subs.map(sub => {
+                  const sk = toKey(sub);
+                  const val = catSubs[sk] !== undefined ? catSubs[sk] : (DEFAULT_TETOS[c.id]?.[sk] || 0);
+                  return (
+                    <div key={sub} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, paddingLeft: 16 }}>
+                      <span style={{ flex: 1, fontSize: 12, color: C.muted }}>{sub}</span>
+                      <Input type="number" value={val}
+                        onChange={e => {
+                          const newCat = { ...catSubs, [sk]: parseFloat(e.target.value) || 0 };
+                          setTetos({ ...tetos, [c.id]: newCat });
+                        }}
+                        style={{ width: 100, textAlign: "right", fontSize: 12, padding: "6px 10px" }} />
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
           <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: C.muted, fontSize: 13 }}>Total</span>
+            <span style={{ color: C.muted, fontSize: 13 }}>Total geral</span>
             <span style={{ color: C.accent, fontWeight: 700 }}>{fmt(totalTeto)}</span>
           </div>
         </div>
@@ -530,7 +579,7 @@ function History() {
             {monthsData.map((m, i) => {
               const spent = m.spentByCat[cat.id] || 0;
               const teto = m.tetos[cat.id] || 0;
-              const maxV = Math.max(...monthsData.map(x => x.spentByCat[cat.id] || 0), teto, 1);
+              const maxV = Math.max(...monthsData.map(x => x.spentByCat[cat.id] || 0), catTotal(m.tetos, cat.id), 1);
               const h = spent > 0 ? Math.max(4, (spent / maxV) * 44) : 3;
               const over = teto > 0 && spent > teto;
               const isLast = i === monthsData.length - 1;
@@ -572,7 +621,7 @@ function History() {
                 </td>
                 {monthsData.map(m => {
                   const spent = m.spentByCat[cat.id] || 0;
-                  const over = m.tetos[cat.id] > 0 && spent > m.tetos[cat.id];
+                  const over = catTotal(m.tetos, cat.id) > 0 && spent > catTotal(m.tetos, cat.id);
                   return (
                     <td key={m.mk} style={{ padding: "8px 4px", borderBottom: `1px solid ${C.border}`, textAlign: "right", color: over ? C.red : spent > 0 ? C.text : C.muted, whiteSpace: "nowrap" }}>
                       {spent > 0 ? fmtShort(spent) : "—"}
