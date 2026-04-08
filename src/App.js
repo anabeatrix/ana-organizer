@@ -429,16 +429,68 @@ function Finance() {
         ))}
       </div>
 
-      {view === "overview" && (
+      {view === "overview" && !filterCat && (
         <div>
           <Label>Teto vs realizado</Label>
           {CATEGORIES.map(c => (
             <BudgetBar key={c.id} label={c.label} spent={spentByCat[c.id] || 0} teto={catTotal(tetos, c.id)}
-              color={c.color} onPress={() => { setFilterCat(c.id); setView("gastos"); }} />
+              color={c.color} onPress={() => setFilterCat(c.id)} />
           ))}
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 12, textAlign: "center" }}>Toque numa categoria para ver os gastos</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 12, textAlign: "center" }}>Toque numa categoria para detalhar</div>
         </div>
       )}
+
+      {view === "overview" && filterCat && (() => {
+        const cat = CATEGORIES.find(c => c.id === filterCat);
+        if (!cat) return null;
+        const catSubs = tetos[filterCat] || {};
+        const spentBySub = expenses.filter(e => e.cat === filterCat).reduce((acc, e) => {
+          acc[toKey(e.sub)] = (acc[toKey(e.sub)] || 0) + e.amount;
+          return acc;
+        }, {});
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <button onClick={() => setFilterCat(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: 0 }}>←</button>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: cat.color }} />
+              <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{cat.label}</span>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: cat.color, fontWeight: 700 }}>
+                {fmt(spentByCat[filterCat] || 0)} / {fmt(catTotal(tetos, filterCat))}
+              </span>
+            </div>
+            {cat.subs.map(sub => {
+              const sk = toKey(sub);
+              const subTeto = catSubs[sk] || 0;
+              const subSpent = spentBySub[sk] || 0;
+              const over = subTeto > 0 && subSpent > subTeto;
+              const warn = subTeto > 0 && subSpent / subTeto >= 0.8 && !over;
+              const pct = subTeto > 0 ? Math.min(100, (subSpent / subTeto) * 100) : 0;
+              const barColor = over ? C.red : warn ? C.orange : cat.color;
+              if (subTeto === 0 && subSpent === 0) return null;
+              return (
+                <div key={sub} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: over ? C.red : C.text, fontWeight: over ? 700 : 400 }}>{sub}{over && " ⚠"}</span>
+                    <span style={{ fontSize: 12, color: over ? C.red : warn ? C.orange : C.muted }}>
+                      {fmt(subSpent)}{subTeto > 0 ? ` / ${fmt(subTeto)}` : ""}
+                    </span>
+                  </div>
+                  {subTeto > 0 && (
+                    <div style={{ background: "#2a2318", borderRadius: 999, height: 4, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: barColor, borderRadius: 999, transition: "width 0.4s" }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <button onClick={() => { setView("gastos"); }} style={{
+              marginTop: 16, width: "100%", background: "none", border: `1px solid ${C.border}`,
+              color: C.muted, borderRadius: 10, padding: "10px 0", fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit"
+            }}>Ver todos os gastos desta categoria →</button>
+          </div>
+        );
+      })()}
 
       {view === "gastos" && (
         <div>
