@@ -44,12 +44,21 @@ const monthLabel = mk => {
 };
 
 const CATEGORIES = [
-  { id: "moradia", label: "Moradia", color: C.blue, type: "fixa", subs: ["Aluguel", "Luz", "Água", "Outros"] },
-  { id: "pessoal", label: "Pessoal Fixo", color: C.gold, type: "fixa", subs: ["Celular", "Internet", "Academia", "Pilates", "Outros"] },
-  { id: "educacao", label: "Educação", color: C.accent, type: "fixa", subs: ["Faculdade", "Escola Irmã", "Inglês", "Italiano", "Cursos/Livros", "Outros"] },
-  { id: "outras_fixas", label: "Outras Fixas", color: "#a07ab8", type: "fixa", subs: ["Assinaturas", "Donativos", "Terapia", "Terceiros/Empréstimo", "Outros"] },
-  { id: "variaveis", label: "Variáveis", color: C.green, type: "variavel", subs: ["Dia a dia", "Mercado", "Feira", "Padaria/Lanche", "Combustível/Uber", "Farmácia", "Consultas", "Beleza", "Roupas/Compras", "Lazer/Passeio", "Pets", "Papelaria", "Presentes", "Extra", "Outros"] },
-  { id: "viagem", label: "Viagem", color: C.orange, type: "variavel", subs: ["Passagem", "Hospedagem", "Passeio", "Alimentação", "Outros"] },
+  { id: "moradia", label: "Moradia", color: C.blue, type: "fixa", block: "fixas", subs: ["Aluguel", "Luz", "Água", "Outros"] },
+  { id: "pessoal", label: "Pessoal Fixo", color: C.gold, type: "fixa", block: "fixas", subs: ["Celular", "Internet", "Academia", "Pilates", "Outros"] },
+  { id: "educacao", label: "Educação", color: C.accent, type: "fixa", block: "fixas", subs: ["Faculdade", "Escola Irmã", "Inglês", "Italiano", "Cursos/Livros", "Outros"] },
+  { id: "outras_fixas", label: "Outras Fixas", color: "#a07ab8", type: "fixa", block: "fixas", subs: ["Assinaturas", "Donativos", "Terapia", "Outros"] },
+  { id: "variaveis", label: "Variáveis", color: C.green, type: "variavel", block: "variaveis", subs: ["Dia a dia", "Mercado", "Feira", "Padaria/Lanche", "Combustível/Uber", "Farmácia", "Consultas", "Beleza", "Roupas/Compras", "Lazer/Passeio", "Pets", "Papelaria", "Presentes", "Extra", "Outros"] },
+  { id: "viagem", label: "Viagem", color: C.orange, type: "variavel", block: "variaveis", subs: ["Passagem", "Hospedagem", "Passeio", "Alimentação", "Outros"] },
+  { id: "edp", label: "EDP", color: C.red, type: "fixa", block: "edp", subs: ["Empréstimo", "Cartão Parcelado", "Outros"] },
+  { id: "sonhos", label: "Sonhos", color: "#b87ab8", type: "sonhos", block: "sonhos", subs: ["Reserva de Emergência", "Previdência", "Viagem dos Sonhos", "Outros"] },
+];
+
+const BOX_BLOCKS = [
+  { id: "fixas", label: "Fixas Pessoais", color: C.accent, cats: ["moradia", "pessoal", "educacao", "outras_fixas"] },
+  { id: "variaveis", label: "Variáveis Pessoais", color: C.green, cats: ["variaveis", "viagem"] },
+  { id: "edp", label: "EDP", color: C.red, cats: ["edp"] },
+  { id: "sonhos", label: "Sonhos", color: "#b87ab8", cats: ["sonhos"] },
 ];
 
 const INCOME_CATS = ["Salário", "Vale", "PLR", "Freelance", "Resgates", "Outros"];
@@ -70,9 +79,11 @@ const buildDefaultTetos = () => {
     { id: "moradia", subs: ["Aluguel", "Luz", "Água", "Outros"] },
     { id: "pessoal", subs: ["Celular", "Internet", "Academia", "Pilates", "Outros"] },
     { id: "educacao", subs: ["Faculdade", "Escola Irmã", "Inglês", "Italiano", "Cursos/Livros", "Outros"] },
-    { id: "outras_fixas", subs: ["Assinaturas", "Donativos", "Terapia", "Terceiros/Empréstimo", "Outros"] },
+    { id: "outras_fixas", subs: ["Assinaturas", "Donativos", "Terapia", "Outros"] },
     { id: "variaveis", subs: ["Dia a dia", "Mercado", "Feira", "Padaria/Lanche", "Combustível/Uber", "Farmácia", "Consultas", "Beleza", "Roupas/Compras", "Lazer/Passeio", "Pets", "Papelaria", "Presentes", "Extra", "Outros"] },
     { id: "viagem", subs: ["Passagem", "Hospedagem", "Passeio", "Alimentação", "Outros"] },
+    { id: "edp", subs: ["Empréstimo", "Cartão Parcelado", "Outros"] },
+    { id: "sonhos", subs: ["Reserva de Emergência", "Previdência", "Viagem dos Sonhos", "Outros"] },
   ];
   CATS_STATIC.forEach(c => {
     result[c.id] = {};
@@ -629,6 +640,149 @@ function Finance() {
   );
 }
 
+// ─── BOX ZERADO ────────────────────────────────────────────────────────────
+function Box() {
+  const mk = monthKey();
+  const [renda, setRenda] = useFirestore("renda_" + mk, 0);
+  const [expenses, , expReady] = useFirestore("expenses_" + mk, []);
+  const [tetos, , tetosReady] = useFirestore("tetos_" + mk, {});
+  const [incomes] = useFirestore("incomes_" + mk, []);
+  const [editingRenda, setEditingRenda] = useState(false);
+  const [rendaInput, setRendaInput] = useState("");
+
+  const totalIncome = incomes.reduce((a, i) => a + i.amount, 0);
+  const rendaReal = totalIncome > 0 ? totalIncome : (renda || 0);
+
+  const spentByCat = expenses.reduce((acc, e) => {
+    acc[e.cat] = (acc[e.cat] || 0) + e.amount;
+    return acc;
+  }, {});
+
+  const blockData = BOX_BLOCKS.map(block => {
+    const teto = block.cats.reduce((a, cid) => a + catTotal(tetos, cid), 0);
+    const spent = block.cats.reduce((a, cid) => a + (spentByCat[cid] || 0), 0);
+    const pct = rendaReal > 0 ? (teto / rendaReal) * 100 : 0;
+    const spentPct = rendaReal > 0 ? (spent / rendaReal) * 100 : 0;
+    return { ...block, teto, spent, pct, spentPct };
+  });
+
+  const totalTeto = blockData.reduce((a, b) => a + b.teto, 0);
+  const totalSpent = blockData.reduce((a, b) => a + b.spent, 0);
+  const saldoPlano = rendaReal - totalTeto;
+  const saldoReal = rendaReal - totalSpent;
+  const boxZerado = Math.abs(saldoPlano) < 1;
+
+  if (!expReady || !tetosReady) return <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Carregando...</div>;
+
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 11, color: C.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
+          {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+        </div>
+        <div style={{ fontSize: 22, fontFamily: "Georgia, serif", color: C.text }}>Box Zerado</div>
+      </div>
+
+      {/* Renda */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8, fontWeight: 700 }}>Renda do mês</div>
+        {editingRenda ? (
+          <div style={{ display: "flex", gap: 8 }}>
+            <input autoFocus value={rendaInput} onChange={e => setRendaInput(e.target.value)} type="number"
+              placeholder="Ex: 9500"
+              style={{ flex: 1, background: "#1e1a14", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "9px 12px", fontSize: 18, fontWeight: 700, outline: "none", fontFamily: "inherit" }} />
+            <button onClick={() => { setRenda(parseFloat(rendaInput) || 0); setEditingRenda(false); }} style={{
+              background: C.accent, border: "none", color: "#fff", borderRadius: 8,
+              padding: "9px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 600
+            }}>Salvar</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+            <div style={{ fontSize: 28, fontWeight: 800, color: C.green, fontFamily: "Georgia, serif" }}>{fmt(rendaReal)}</div>
+            {totalIncome > 0 && <div style={{ fontSize: 11, color: C.muted }}>receitas lançadas</div>}
+            <button onClick={() => { setRendaInput(String(renda || "")); setEditingRenda(true); }} style={{
+              background: "none", border: `1px solid ${C.border}`, color: C.muted,
+              borderRadius: 8, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", marginLeft: "auto"
+            }}>Editar</button>
+          </div>
+        )}
+      </div>
+
+      {/* Status do Box */}
+      <div style={{
+        background: boxZerado ? C.green + "18" : saldoPlano > 0 ? C.blue + "18" : C.red + "18",
+        border: `1px solid ${boxZerado ? C.green : saldoPlano > 0 ? C.blue : C.red}44`,
+        borderRadius: 12, padding: 14, marginBottom: 20, display: "flex", alignItems: "center", gap: 12
+      }}>
+        <div style={{ fontSize: 22 }}>{boxZerado ? "✓" : saldoPlano > 0 ? "↑" : "⚠"}</div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: boxZerado ? C.green : saldoPlano > 0 ? C.blue : C.red }}>
+            {boxZerado ? "Box zerado!" : saldoPlano > 0 ? `Sobram ${fmt(saldoPlano)} para alocar` : `Déficit de ${fmt(Math.abs(saldoPlano))} no plano`}
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+            {boxZerado ? "Plano equilibrado para o mês." : saldoPlano > 0 ? "Aloque o restante em Sonhos ou outra categoria." : "Revise os tetos ou planeje um resgate."}
+          </div>
+        </div>
+      </div>
+
+      {/* Blocos */}
+      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 12, fontWeight: 700 }}>Distribuição</div>
+      {blockData.map(block => (
+        <div key={block.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: block.color }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{block.label}</span>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: block.color, fontFamily: "Georgia, serif" }}>{fmt(block.teto)}</div>
+              <div style={{ fontSize: 10, color: C.muted }}>{rendaReal > 0 ? block.pct.toFixed(1) : 0}% da renda</div>
+            </div>
+          </div>
+          {/* Plano bar */}
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Plano</div>
+          <div style={{ background: "#2a2318", borderRadius: 999, height: 6, overflow: "hidden", marginBottom: 8 }}>
+            <div style={{ width: `${Math.min(100, block.pct)}%`, height: "100%", background: block.color, borderRadius: 999 }} />
+          </div>
+          {/* Realizado bar */}
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginBottom: 4 }}>
+            <span>Realizado</span>
+            <span style={{ color: block.spent > block.teto && block.teto > 0 ? C.red : C.muted }}>
+              {fmt(block.spent)}{block.teto > 0 ? ` / ${fmt(block.teto)}` : ""}
+            </span>
+          </div>
+          <div style={{ background: "#2a2318", borderRadius: 999, height: 4, overflow: "hidden" }}>
+            <div style={{
+              width: `${Math.min(100, block.teto > 0 ? (block.spent / block.teto) * 100 : 0)}%`,
+              height: "100%",
+              background: block.spent > block.teto && block.teto > 0 ? C.red : block.color + "88",
+              borderRadius: 999, transition: "width 0.4s"
+            }} />
+          </div>
+        </div>
+      ))}
+
+      {/* Totais */}
+      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16, marginTop: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+          <span style={{ fontSize: 13, color: C.muted }}>Total planejado</span>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{fmt(totalTeto)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+          <span style={{ fontSize: 13, color: C.muted }}>Total realizado</span>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{fmt(totalSpent)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>Saldo real</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: saldoReal >= 0 ? C.green : C.red, fontFamily: "Georgia, serif" }}>
+            {saldoReal >= 0 ? "+" : ""}{fmt(saldoReal)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── HISTORY ───────────────────────────────────────────────────────────────
 function History() {
   const [monthsData, setMonthsData] = useState([]);
@@ -803,6 +957,7 @@ function Login({ onLogin, loading }) {
 const TABS = [
   { id: "today", label: "Today", icon: "◎" },
   { id: "finance", label: "Finanças", icon: "◈" },
+  { id: "box", label: "Box", icon: "◻" },
   { id: "history", label: "Histórico", icon: "◑" },
 ];
 
@@ -874,6 +1029,7 @@ export default function App() {
         <div style={{ padding: "24px 20px" }}>
           {tab === "today" && <Today />}
           {tab === "finance" && <Finance />}
+          {tab === "box" && <Box />}
           {tab === "history" && <History />}
         </div>
       </div>
