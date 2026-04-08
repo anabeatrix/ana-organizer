@@ -298,7 +298,9 @@ function Finance() {
   const mk = monthKey();
   const [expenses, setExpenses, expReady] = useFirestore("expenses_" + mk, []);
   const [incomes, setIncomes] = useFirestore("incomes_" + mk, []);
-  const [tetos, setTetos] = useFirestore("tetos_" + mk, DEFAULT_TETOS);
+  const [plan, setPlan] = useFirestore("plan_" + mk, { renda: 0, tetos: DEFAULT_TETOS });
+  const tetos = plan.tetos || DEFAULT_TETOS;
+  const setTetos = (newTetos) => setPlan({ ...plan, tetos: newTetos });
   const [investments, setInvestments] = useFirestore("investments", []);
   const [view, setView] = useState("overview");
   const [filterCat, setFilterCat] = useState(null);
@@ -641,17 +643,21 @@ function Finance() {
 }
 
 // ─── BOX ZERADO ────────────────────────────────────────────────────────────
-function Box() {
-  const mk = monthKey();
-  const [renda, setRenda] = useFirestore("renda_" + mk, 0);
+function MonthBox({ mk, isCurrentMonth }) {
+  const [plan, setPlan] = useFirestore("plan_" + mk, { renda: 0, tetos: DEFAULT_TETOS });
   const [expenses, , expReady] = useFirestore("expenses_" + mk, []);
-  const [tetos, , tetosReady] = useFirestore("tetos_" + mk, {});
   const [incomes] = useFirestore("incomes_" + mk, []);
+  const [prevPlan] = useFirestore("plan_" + getPrevMonthKey(mk), { renda: 0, tetos: DEFAULT_TETOS });
   const [editingRenda, setEditingRenda] = useState(false);
   const [rendaInput, setRendaInput] = useState("");
 
+  const tetos = plan.tetos || DEFAULT_TETOS;
+  const renda = plan.renda || 0;
+  const setRenda = (val) => setPlan({ ...plan, renda: val });
+  const setTetos = (newTetos) => setPlan({ ...plan, tetos: newTetos });
+
   const totalIncome = incomes.reduce((a, i) => a + i.amount, 0);
-  const rendaReal = totalIncome > 0 ? totalIncome : (renda || 0);
+  const rendaReal = isCurrentMonth && totalIncome > 0 ? totalIncome : renda;
 
   const spentByCat = expenses.reduce((acc, e) => {
     acc[e.cat] = (acc[e.cat] || 0) + e.amount;
@@ -662,90 +668,107 @@ function Box() {
     const teto = block.cats.reduce((a, cid) => a + catTotal(tetos, cid), 0);
     const spent = block.cats.reduce((a, cid) => a + (spentByCat[cid] || 0), 0);
     const pct = rendaReal > 0 ? (teto / rendaReal) * 100 : 0;
-    const spentPct = rendaReal > 0 ? (spent / rendaReal) * 100 : 0;
-    return { ...block, teto, spent, pct, spentPct };
+    return { ...block, teto, spent, pct };
   });
 
   const totalTeto = blockData.reduce((a, b) => a + b.teto, 0);
   const totalSpent = blockData.reduce((a, b) => a + b.spent, 0);
   const saldoPlano = rendaReal - totalTeto;
   const saldoReal = rendaReal - totalSpent;
-  const boxZerado = Math.abs(saldoPlano) < 1;
+  const boxZerado = rendaReal > 0 && Math.abs(saldoPlano) < 1;
+  const isPlanejado = rendaReal > 0;
 
-  if (!expReady || !tetosReady) return <div style={{ color: C.muted, padding: 40, textAlign: "center" }}>Carregando...</div>;
+  const copyFromPrev = () => {
+    const prevTetos = prevPlan.tetos || DEFAULT_TETOS;
+    const prevRenda = prevPlan.renda || 0;
+    setPlan({ renda: prevRenda, tetos: prevTetos });
+  };
+
+  if (!expReady) return <div style={{ color: C.muted, padding: 24, textAlign: "center", fontSize: 13 }}>Carregando...</div>;
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 11, color: C.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
-          {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
-        </div>
-        <div style={{ fontSize: 22, fontFamily: "Georgia, serif", color: C.text }}>Box Zerado</div>
-      </div>
-
       {/* Renda */}
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8, fontWeight: 700 }}>Renda do mês</div>
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 14 }}>
+        <Label>Renda {isCurrentMonth ? "do mês" : "esperada"}</Label>
         {editingRenda ? (
           <div style={{ display: "flex", gap: 8 }}>
-            <input autoFocus value={rendaInput} onChange={e => setRendaInput(e.target.value)} type="number"
-              placeholder="Ex: 9500"
+            <input autoFocus value={rendaInput} onChange={e => setRendaInput(e.target.value)} type="number" placeholder="Ex: 9500"
               style={{ flex: 1, background: "#1e1a14", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "9px 12px", fontSize: 18, fontWeight: 700, outline: "none", fontFamily: "inherit" }} />
             <button onClick={() => { setRenda(parseFloat(rendaInput) || 0); setEditingRenda(false); }} style={{
               background: C.accent, border: "none", color: "#fff", borderRadius: 8,
               padding: "9px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 600
-            }}>Salvar</button>
+            }}>OK</button>
           </div>
         ) : (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: C.green, fontFamily: "Georgia, serif" }}>{fmt(rendaReal)}</div>
-            {totalIncome > 0 && <div style={{ fontSize: 11, color: C.muted }}>receitas lançadas</div>}
-            <button onClick={() => { setRendaInput(String(renda || "")); setEditingRenda(true); }} style={{
-              background: "none", border: `1px solid ${C.border}`, color: C.muted,
-              borderRadius: 8, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", marginLeft: "auto"
-            }}>Editar</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontSize: 26, fontWeight: 800, color: C.green, fontFamily: "Georgia, serif" }}>
+              {rendaReal > 0 ? fmt(rendaReal) : "—"}
+            </div>
+            {isCurrentMonth && totalIncome > 0 && <div style={{ fontSize: 10, color: C.muted }}>receitas lançadas</div>}
+            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              {!isPlanejado && (
+                <button onClick={copyFromPrev} style={{
+                  background: "none", border: `1px solid ${C.border}`, color: C.muted,
+                  borderRadius: 8, padding: "4px 10px", fontSize: 10, cursor: "pointer", fontFamily: "inherit"
+                }}>Copiar mês anterior</button>
+              )}
+              <button onClick={() => { setRendaInput(String(renda || "")); setEditingRenda(true); }} style={{
+                background: "none", border: `1px solid ${C.border}`, color: C.muted,
+                borderRadius: 8, padding: "4px 10px", fontSize: 10, cursor: "pointer", fontFamily: "inherit"
+              }}>Editar</button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Status do Box */}
-      <div style={{
-        background: boxZerado ? C.green + "18" : saldoPlano > 0 ? C.blue + "18" : C.red + "18",
-        border: `1px solid ${boxZerado ? C.green : saldoPlano > 0 ? C.blue : C.red}44`,
-        borderRadius: 12, padding: 14, marginBottom: 20, display: "flex", alignItems: "center", gap: 12
-      }}>
-        <div style={{ fontSize: 22 }}>{boxZerado ? "✓" : saldoPlano > 0 ? "↑" : "⚠"}</div>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: boxZerado ? C.green : saldoPlano > 0 ? C.blue : C.red }}>
-            {boxZerado ? "Box zerado!" : saldoPlano > 0 ? `Sobram ${fmt(saldoPlano)} para alocar` : `Déficit de ${fmt(Math.abs(saldoPlano))} no plano`}
-          </div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-            {boxZerado ? "Plano equilibrado para o mês." : saldoPlano > 0 ? "Aloque o restante em Sonhos ou outra categoria." : "Revise os tetos ou planeje um resgate."}
+      {/* Status */}
+      {isPlanejado && (
+        <div style={{
+          background: boxZerado ? C.green + "18" : saldoPlano > 0 ? C.blue + "18" : C.red + "18",
+          border: `1px solid ${boxZerado ? C.green : saldoPlano > 0 ? C.blue : C.red}44`,
+          borderRadius: 12, padding: 12, marginBottom: 16, display: "flex", alignItems: "center", gap: 10
+        }}>
+          <div style={{ fontSize: 20 }}>{boxZerado ? "✓" : saldoPlano > 0 ? "↑" : "⚠"}</div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: boxZerado ? C.green : saldoPlano > 0 ? C.blue : C.red }}>
+              {boxZerado ? "Box zerado!" : saldoPlano > 0 ? `Sobram ${fmt(saldoPlano)} para alocar` : `Déficit de ${fmt(Math.abs(saldoPlano))}`}
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+              {boxZerado ? "Plano equilibrado." : saldoPlano > 0 ? "Aloque o restante em Sonhos." : "Revise os tetos ou planeje um resgate."}
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {!isPlanejado && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16, textAlign: "center" }}>
+          <div style={{ color: C.muted, fontSize: 13, marginBottom: 10 }}>Mês não planejado ainda.</div>
+          <button onClick={copyFromPrev} style={{
+            background: C.accent, border: "none", color: "#fff", borderRadius: 10,
+            padding: "10px 20px", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 600
+          }}>Copiar plano do mês anterior</button>
+        </div>
+      )}
 
       {/* Blocos */}
-      <div style={{ fontSize: 10, color: C.muted, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 12, fontWeight: 700 }}>Distribuição</div>
-      {blockData.map(block => (
-        <div key={block.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+      {isPlanejado && blockData.map(block => (
+        <div key={block.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 14, marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: block.color }} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{block.label}</span>
+              <div style={{ width: 9, height: 9, borderRadius: "50%", background: block.color }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{block.label}</span>
             </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: block.color, fontFamily: "Georgia, serif" }}>{fmt(block.teto)}</div>
-              <div style={{ fontSize: 10, color: C.muted }}>{rendaReal > 0 ? block.pct.toFixed(1) : 0}% da renda</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: block.color, fontFamily: "Georgia, serif" }}>{fmt(block.teto)}</div>
+              <div style={{ fontSize: 9, color: C.muted }}>{rendaReal > 0 ? block.pct.toFixed(1) : 0}% da renda</div>
             </div>
           </div>
-          {/* Plano bar */}
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Plano</div>
-          <div style={{ background: "#2a2318", borderRadius: 999, height: 6, overflow: "hidden", marginBottom: 8 }}>
+          <div style={{ fontSize: 9, color: C.muted, marginBottom: 3 }}>Plano</div>
+          <div style={{ background: "#2a2318", borderRadius: 999, height: 5, overflow: "hidden", marginBottom: 8 }}>
             <div style={{ width: `${Math.min(100, block.pct)}%`, height: "100%", background: block.color, borderRadius: 999 }} />
           </div>
-          {/* Realizado bar */}
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginBottom: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: C.muted, marginBottom: 3 }}>
             <span>Realizado</span>
             <span style={{ color: block.spent > block.teto && block.teto > 0 ? C.red : C.muted }}>
               {fmt(block.spent)}{block.teto > 0 ? ` / ${fmt(block.teto)}` : ""}
@@ -754,31 +777,120 @@ function Box() {
           <div style={{ background: "#2a2318", borderRadius: 999, height: 4, overflow: "hidden" }}>
             <div style={{
               width: `${Math.min(100, block.teto > 0 ? (block.spent / block.teto) * 100 : 0)}%`,
-              height: "100%",
-              background: block.spent > block.teto && block.teto > 0 ? C.red : block.color + "88",
-              borderRadius: 999, transition: "width 0.4s"
+              height: "100%", borderRadius: 999, transition: "width 0.4s",
+              background: block.spent > block.teto && block.teto > 0 ? C.red : block.color + "88"
             }} />
           </div>
         </div>
       ))}
 
       {/* Totais */}
-      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16, marginTop: 8 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-          <span style={{ fontSize: 13, color: C.muted }}>Total planejado</span>
-          <span style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{fmt(totalTeto)}</span>
+      {isPlanejado && (
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: C.muted }}>Total planejado</span>
+            <span style={{ fontSize: 12, color: C.text, fontWeight: 700 }}>{fmt(totalTeto)}</span>
+          </div>
+          {isCurrentMonth && (
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.muted }}>Total realizado</span>
+              <span style={{ fontSize: 12, color: C.text, fontWeight: 700 }}>{fmt(totalSpent)}</span>
+            </div>
+          )}
+          {isCurrentMonth && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>Saldo real</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: saldoReal >= 0 ? C.green : C.red, fontFamily: "Georgia, serif" }}>
+                {saldoReal >= 0 ? "+" : ""}{fmt(saldoReal)}
+              </span>
+            </div>
+          )}
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-          <span style={{ fontSize: 13, color: C.muted }}>Total realizado</span>
-          <span style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>{fmt(totalSpent)}</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>Saldo real</span>
-          <span style={{ fontSize: 16, fontWeight: 800, color: saldoReal >= 0 ? C.green : C.red, fontFamily: "Georgia, serif" }}>
-            {saldoReal >= 0 ? "+" : ""}{fmt(saldoReal)}
-          </span>
-        </div>
+      )}
+    </div>
+  );
+}
+
+function getPrevMonthKey(mk) {
+  const [y, m] = mk.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  return d.toISOString().slice(0, 7);
+}
+
+function getNextMonths(n) {
+  const result = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    result.push({
+      mk: d.toISOString().slice(0, 7),
+      label: d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", ""),
+      isCurrent: i === 0,
+    });
+  }
+  return result;
+}
+
+function BoxStatus({ mk }) {
+  const [plan] = useFirestore("plan_" + mk, { renda: 0, tetos: DEFAULT_TETOS });
+  const [incomes] = useFirestore("incomes_" + mk, []);
+  const tetos = plan.tetos || DEFAULT_TETOS;
+  const renda = plan.renda || 0;
+  const totalIncome = incomes.reduce((a, i) => a + i.amount, 0);
+  const rendaReal = totalIncome > 0 ? totalIncome : renda;
+  const totalTeto = CATEGORIES.reduce((a, c) => a + catTotal(tetos, c.id), 0);
+  const saldoPlano = rendaReal - totalTeto;
+  const zerado = rendaReal > 0 && Math.abs(saldoPlano) < 1;
+  const planejado = rendaReal > 0;
+  if (!planejado) return <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#2a2318", border: "1.5px solid #3a3228", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: C.muted }}>—</div>;
+  if (zerado) return <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.green + "22", border: `1.5px solid ${C.green}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.green }}>✓</div>;
+  if (saldoPlano > 0) return <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.blue + "22", border: `1.5px solid ${C.blue}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.blue }}>↑</div>;
+  return <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.red + "22", border: `1.5px solid ${C.red}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.red }}>⚠</div>;
+}
+
+function Box() {
+  const months = getNextMonths(6);
+  const [selectedMk, setSelectedMk] = useState(monthKey());
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 11, color: C.muted, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Planejamento</div>
+        <div style={{ fontSize: 22, fontFamily: "Georgia, serif", color: C.text }}>Box Zerado</div>
       </div>
+
+      {/* Month status row */}
+      <Label>Status dos meses</Label>
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, overflowX: "auto", paddingBottom: 4 }}>
+        {months.map(m => (
+          <div key={m.mk} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, cursor: "pointer", flexShrink: 0 }}
+            onClick={() => setSelectedMk(m.mk)}>
+            <div style={{ fontSize: 10, color: selectedMk === m.mk ? C.accent : C.muted, fontWeight: selectedMk === m.mk ? 700 : 400 }}>
+              {m.label.charAt(0).toUpperCase() + m.label.slice(1)}
+            </div>
+            <BoxStatus mk={m.mk} />
+            {m.isCurrent && <div style={{ width: 4, height: 4, borderRadius: "50%", background: C.accent }} />}
+          </div>
+        ))}
+      </div>
+
+      {/* Month tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
+        {months.map(m => (
+          <button key={m.mk} onClick={() => setSelectedMk(m.mk)} style={{
+            background: selectedMk === m.mk ? C.accent + "22" : "none",
+            border: `1px solid ${selectedMk === m.mk ? C.accent : C.border}`,
+            color: selectedMk === m.mk ? C.accent : C.muted,
+            borderRadius: 20, padding: "5px 14px", fontSize: 12,
+            cursor: "pointer", fontFamily: "inherit", fontWeight: selectedMk === m.mk ? 600 : 400,
+          }}>
+            {m.label.charAt(0).toUpperCase() + m.label.slice(1)}
+            {m.isCurrent && " ·"}
+          </button>
+        ))}
+      </div>
+
+      <MonthBox key={selectedMk} mk={selectedMk} isCurrentMonth={selectedMk === monthKey()} />
     </div>
   );
 }
