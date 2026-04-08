@@ -26,7 +26,11 @@ const C = {
   orange: "#d4a44a",
 };
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const todayKey = () => {
+  const d = new Date();
+  d.setHours(d.getHours() - 3);
+  return d.toISOString().slice(0, 10);
+};
 const monthKey = () => new Date().toISOString().slice(0, 7);
 const fmt = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtShort = v => {
