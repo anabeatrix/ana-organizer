@@ -654,7 +654,6 @@ function MonthBox({ mk, isCurrentMonth }) {
   const tetos = plan.tetos || DEFAULT_TETOS;
   const renda = plan.renda || 0;
   const setRenda = (val) => setPlan({ ...plan, renda: val });
-  const setTetos = (newTetos) => setPlan({ ...plan, tetos: newTetos });
 
   const totalIncome = incomes.reduce((a, i) => a + i.amount, 0);
   const rendaReal = isCurrentMonth && totalIncome > 0 ? totalIncome : renda;
