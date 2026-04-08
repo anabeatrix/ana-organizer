@@ -373,7 +373,6 @@ export default function Finance() {
   const totalTeto = CATEGORIES.reduce((a, c) => a + catTotal(tetos, c.id), 0);
   const totalIncome = incomes.reduce((a, i) => a + i.amount, 0);
   const saldo = totalIncome - totalSpent;
-  const netWorth = 0; // read separately in InvestmentsView
   const overBudget = CATEGORIES.filter(c => spentByCat[c.id] > catTotal(tetos, c.id) && catTotal(tetos, c.id) > 0);
 
   const addExpense = e => setExpenses([...expenses, { id: Date.now(), ...e, label: CATEGORIES.find(c => c.id === e.cat)?.label || e.cat }]);
